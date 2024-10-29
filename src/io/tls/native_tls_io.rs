@@ -1,16 +1,19 @@
 #![cfg(feature = "native-tls-tls")]
 
+use minitrace::future::FutureExt;
+use minitrace::Span;
 use native_tls::{Certificate, TlsConnector};
 
 use crate::io::Endpoint;
 use crate::{Result, SslOpts};
 
 impl SslOpts {
+    #[minitrace::trace]
     async fn load_root_certs(&self) -> crate::Result<Vec<Certificate>> {
         let mut output = Vec::new();
 
         for root_cert in self.root_certs() {
-            let root_cert_data = root_cert.read().await?;
+            let root_cert_data = root_cert.read().in_span(Span::enter_with_local_parent("read_root_cert")).await?;
             output.extend(parse_certs(root_cert_data.as_ref())?);
         }
 
@@ -41,7 +44,7 @@ impl Endpoint {
         *self = match self {
             Endpoint::Plain(ref mut stream) => {
                 let stream = stream.take().unwrap();
-                let tls_stream = tls_connector.connect(&domain, stream).await?;
+                let tls_stream = tls_connector.connect(&domain, stream).in_span(Span::enter_with_local_parent("connect_tls")).await?;
                 Endpoint::Secure(tls_stream)
             }
             Endpoint::Secure(_) => unreachable!(),

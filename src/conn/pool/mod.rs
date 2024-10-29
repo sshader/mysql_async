@@ -11,14 +11,7 @@ use keyed_priority_queue::KeyedPriorityQueue;
 use tokio::sync::mpsc;
 
 use std::{
-    borrow::Borrow,
-    cmp::Reverse,
-    collections::VecDeque,
-    hash::{Hash, Hasher},
-    str::FromStr,
-    sync::{atomic, Arc, Mutex},
-    task::{Context, Poll, Waker},
-    time::{Duration, Instant},
+    borrow::{Borrow, Cow}, cmp::Reverse, collections::VecDeque, future::Future, hash::{Hash, Hasher}, str::FromStr, sync::{atomic, Arc, Mutex}, task::{Context, Poll, Waker}, time::{Duration, Instant}
 };
 
 use crate::{
@@ -28,8 +21,7 @@ use crate::{
     queryable::transaction::{Transaction, TxOpts},
 };
 use minitrace::{
-    future::FutureExt as MinitraceFutureExt,
-    Span,
+    future::FutureExt as MinitraceFutureExt, local::LocalSpan, Event, Span
 };
 
 mod recycler;
@@ -242,10 +234,15 @@ impl Pool {
     }
 
     /// Async function that resolves to `Conn`.
-    #[minitrace::trace]
-    pub fn get_conn(&self) -> GetConn {
+    pub fn get_conn(&self) -> impl Future<Output = Result<Conn>> {
+        let span = Span::enter_with_local_parent("get_conn");
         let reset_connection = self.opts.pool_opts().reset_connection();
-        GetConn::new(self, reset_connection)
+        let inner = GetConn::new(self, reset_connection);
+        InSpanSpecial {
+            inner,
+            span: Some(span),
+        }
+        
     }
 
     /// Starts a new transaction.
@@ -1200,5 +1197,61 @@ mod test {
 
             runtime.block_on(pool.disconnect()).unwrap();
         }
+    }
+}
+
+/// Adapter for [`FutureExt::in_span()`](FutureExt::in_span).
+#[pin_project::pin_project]
+pub struct InSpanSpecial<T> {
+    #[pin]
+    pub inner: T,
+    pub span: Option<Span>,
+}
+
+impl<T: std::future::Future> std::future::Future for InSpanSpecial<T> {
+    type Output = T::Output;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
+        let _guard = this.span.as_ref().map(|s| s.set_local_parent());
+        let start = std::time::Instant::now();
+        let res = this.inner.poll(cx);
+        let duration = start.elapsed();
+        if duration.as_micros() > 100 {
+            if let Some(span) = this.span.as_ref() {
+                Event::add_to_parent(
+                    "slow_poll",
+                    span,
+                    || [("duration".into(), format!("{:?}", duration).into())],
+                );
+            }
+        }
+
+        match res {
+            r @ Poll::Pending => r,
+            other => {
+                this.span.take();
+                other
+            }
+        }
+    }
+}
+
+/// Adapter for [`FutureExt::enter_on_poll()`](FutureExt::enter_on_poll).
+#[pin_project::pin_project]
+pub struct EnterOnPoll<T> {
+    #[pin]
+    inner: T,
+    name: Cow<'static, str>,
+}
+
+impl<T: std::future::Future> std::future::Future for EnterOnPoll<T> {
+    type Output = T::Output;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let _guard = LocalSpan::enter_with_local_parent(this.name.clone());
+        this.inner.poll(cx)
     }
 }

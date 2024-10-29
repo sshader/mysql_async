@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 
+use minitrace::{future::FutureExt, Span};
 use native_tls::Identity;
 
 use super::PathOrBuf;
@@ -46,8 +47,9 @@ impl ClientIdentity {
         self.password.as_ref().map(AsRef::as_ref)
     }
 
+    #[minitrace::trace]
     pub(crate) async fn load(&self) -> crate::Result<Identity> {
-        let der = self.pkcs12_archive.read().await?;
+        let der = self.pkcs12_archive.read().in_span(Span::enter_with_local_parent("read_pkcs12_archive")).await?;
         let password = self.password().unwrap_or_default();
         Ok(Identity::from_pkcs12(der.as_ref(), password)?)
     }

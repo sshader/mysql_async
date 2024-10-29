@@ -8,6 +8,7 @@
 
 use futures_util::FutureExt;
 
+use minitrace::Span;
 use mysql_common::{
     constants::{DEFAULT_MAX_ALLOWED_PACKET, UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI},
     crypto,
@@ -20,6 +21,7 @@ use mysql_common::{
     proto::MySerialize,
     row::Row,
 };
+use pool::InSpanSpecial;
 
 use std::{
     borrow::Cow,
@@ -487,7 +489,6 @@ impl Conn {
     }
 
 
-    #[minitrace::trace]
     async fn handle_handshake(&mut self) -> Result<()> {
         let packet = self.read_packet().await?;
         let handshake = ParseBuf(&packet).parse::<HandshakePacket>(())?;
@@ -525,7 +526,6 @@ impl Conn {
         Ok(())
     }
 
-    #[minitrace::trace]
     async fn switch_to_ssl_if_needed(&mut self) -> Result<()> {
         if self
             .inner
@@ -946,8 +946,18 @@ impl Conn {
 
             conn.inner.stream = Some(stream);
             conn.setup_stream()?;
-            conn.handle_handshake().await?;
-            conn.switch_to_ssl_if_needed().await?;
+            let handle_handshake_span = Span::enter_with_local_parent("handle_handshake");
+            let handle_handshake = InSpanSpecial {
+                inner: conn.handle_handshake(),
+                span: Some(handle_handshake_span),
+            };
+            handle_handshake.await?;
+            let switch_to_ssl_if_needed_span = Span::enter_with_local_parent("switch_to_ssl_if_needed");
+            let switch_to_ssl_if_needed = InSpanSpecial {
+                inner: conn.switch_to_ssl_if_needed(),
+                span: Some(switch_to_ssl_if_needed_span),
+            };
+            switch_to_ssl_if_needed.await?;
             conn.do_handshake_response().await?;
             conn.continue_auth().await?;
             conn.switch_to_compression()?;

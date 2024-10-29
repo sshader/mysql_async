@@ -415,6 +415,7 @@ impl Stream {
         self.codec.as_ref().unwrap().get_ref().set_tcp_nodelay(val)
     }
 
+    #[minitrace::trace]
     pub(crate) async fn make_secure(
         &mut self,
         domain: String,
