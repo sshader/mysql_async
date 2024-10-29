@@ -27,6 +27,10 @@ use crate::{
     opts::{Opts, PoolOpts},
     queryable::transaction::{Transaction, TxOpts},
 };
+use minitrace::{
+    future::FutureExt as MinitraceFutureExt,
+    Span,
+};
 
 mod recycler;
 // this is a really unfortunate name for a module
@@ -238,6 +242,7 @@ impl Pool {
     }
 
     /// Async function that resolves to `Conn`.
+    #[minitrace::trace]
     pub fn get_conn(&self) -> GetConn {
         let reset_connection = self.opts.pool_opts().reset_connection();
         GetConn::new(self, reset_connection)

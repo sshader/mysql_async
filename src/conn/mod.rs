@@ -477,6 +477,7 @@ impl Conn {
     /// Set `io::Stream` options as defined in the `Opts` of the connection.
     ///
     /// Requires that self.inner.stream is Some
+    #[minitrace::trace]
     fn setup_stream(&mut self) -> Result<()> {
         debug_assert!(self.inner.stream.is_some());
         if let Some(stream) = self.inner.stream.as_mut() {
@@ -485,6 +486,8 @@ impl Conn {
         Ok(())
     }
 
+
+    #[minitrace::trace]
     async fn handle_handshake(&mut self) -> Result<()> {
         let packet = self.read_packet().await?;
         let handshake = ParseBuf(&packet).parse::<HandshakePacket>(())?;
@@ -522,6 +525,7 @@ impl Conn {
         Ok(())
     }
 
+    #[minitrace::trace]
     async fn switch_to_ssl_if_needed(&mut self) -> Result<()> {
         if self
             .inner
@@ -562,6 +566,7 @@ impl Conn {
         }
     }
 
+    #[minitrace::trace]
     async fn do_handshake_response(&mut self) -> Result<()> {
         let auth_data = self
             .inner
@@ -591,6 +596,7 @@ impl Conn {
         Ok(())
     }
 
+    #[minitrace::trace]
     async fn perform_auth_switch(
         &mut self,
         auth_switch_request: AuthSwitchRequest<'_>,
@@ -918,6 +924,7 @@ impl Conn {
     }
 
     /// Returns a future that resolves to [`Conn`].
+    #[minitrace::trace]
     pub fn new<T: Into<Opts>>(opts: T) -> crate::BoxFuture<'static, Conn> {
         let opts = opts.into();
         async move {

@@ -102,10 +102,10 @@ impl Future for GetConn {
         let span = self.span.clone();
         #[cfg(feature = "tracing")]
         let _span_guard = span.enter();
+        let queue_id = self.queue_id.clone();
         loop {
             match self.inner {
                 GetConnInner::New => {
-                    let queue_id = self.queue_id;
                     let next = ready!(self.pool_mut().poll_new_conn(cx, queue_id))?;
                     match next {
                         GetConnInner::Connecting(conn_fut) => {

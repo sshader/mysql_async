@@ -12,6 +12,7 @@ use bytes::BytesMut;
 use futures_core::{ready, stream};
 use mysql_common::proto::codec::PacketCodec as PacketCodecInner;
 use pin_project::pin_project;
+use rand::Rng;
 #[cfg(any(unix, windows))]
 use socket2::{Socket as Socket2Socket, TcpKeepalive};
 #[cfg(unix)]
@@ -354,6 +355,7 @@ impl Stream {
         }
     }
 
+    #[minitrace::trace]
     pub(crate) async fn connect_tcp(
         addr: &HostPortOrUrl,
         keepalive: Option<Duration>,
@@ -404,6 +406,7 @@ impl Stream {
     }
 
     #[cfg(unix)]
+    #[minitrace::trace]
     pub(crate) async fn connect_socket<P: AsRef<Path>>(path: P) -> io::Result<Stream> {
         Ok(Stream::new(Socket::new(path).await?))
     }
